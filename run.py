@@ -29,6 +29,10 @@ pattern = re.compile(r"<extra_id_\d+>")
 
 
 def load_base_model():
+    '''Load the base model and move it to the appropriate device.
+     If using an OpenAI model, do nothing.
+    '''
+
     print('MOVING BASE MODEL TO GPU...', end='', flush=True)
     start = time.time()
     try:
@@ -41,6 +45,10 @@ def load_base_model():
 
 
 def load_mask_model():
+    '''Load the mask filling model and move it to the appropriate device.
+     If using random fills, do nothing.
+    '''
+
     print('MOVING MASK MODEL TO GPU...', end='', flush=True)
     start = time.time()
 
@@ -52,6 +60,12 @@ def load_mask_model():
 
 
 def tokenize_and_mask(text, span_length, pct, ceil_pct=False):
+    '''Tokenize the text and mask spans of tokens according to the specified span_length and pct.
+    split text into tokens, only splitting on spaces (not newlines)
+    randomly select spans of span_length tokens to mask, such that pct of the total tokens are masked
+    ensure that no two masked spans are within args.buffer_size tokens of each other
+    replace each masked span with a single mask token, in the format <extra_id_NUM>, where NUM increments for each masked span'''
+    
     tokens = text.split(' ')
     mask_string = '<<<mask>>>'
 
@@ -82,11 +96,17 @@ def tokenize_and_mask(text, span_length, pct, ceil_pct=False):
 
 
 def count_masks(texts):
+    '''Count the number of masked spans in each text.'''
     return [len([x for x in text.split() if x.startswith("<extra_id_")]) for text in texts]
 
 
 # replace each masked span with a sample from T5 mask_model
 def replace_masks(texts):
+    '''Replace each masked span in the texts with a sample from the mask filling model.
+    Each text is expected to contain <extra_id_*> tokens, where * is an integer starting from 0 and incrementing for each masked span.
+    Returns a list of texts with the masked spans filled in.
+    '''
+
     n_expected = count_masks(texts)
     stop_id = mask_tokenizer.encode(f"<extra_id_{max(n_expected)}>")[0]
     tokens = mask_tokenizer(texts, return_tensors="pt", padding=True).to(DEVICE)
@@ -95,6 +115,11 @@ def replace_masks(texts):
 
 
 def extract_fills(texts):
+    '''Extract the fills from the model output texts.
+    Each text is expected to contain the original text with <extra_id_*> tokens replaced by the model's fills.
+    Returns a list of lists, where each inner list contains the fills for the corresponding text.
+    '''
+
     # remove <pad> from beginning of each text
     texts = [x.replace("<pad>", "").replace("</s>", "").strip() for x in texts]
 
@@ -108,6 +133,13 @@ def extract_fills(texts):
 
 
 def apply_extracted_fills(masked_texts, extracted_fills):
+    '''Apply the extracted fills to the masked texts.
+    Each masked text is expected to contain <extra_id_*> tokens, where * is an integer starting from 0 and incrementing for each masked span.
+    Each list of extracted fills is expected to contain the fills for the corresponding masked text.
+    Returns a list of texts with the masked spans filled in.
+    If the number of fills is less than the number of masks, returns an empty string for that text.
+    '''
+
     # split masked text into tokens, only splitting on spaces (not newlines)
     tokens = [x.split(' ') for x in masked_texts]
 
@@ -127,6 +159,11 @@ def apply_extracted_fills(masked_texts, extracted_fills):
 
 
 def perturb_texts_(texts, span_length, pct, ceil_pct=False):
+    '''Perturb the texts by masking spans and filling them in with either model-generated fills or random fills.
+    If args.random_fills is True, fills the masked spans with random words from FILL_DICTIONARY.
+    If args.random_fills_tokens is True, replaces a percentage of tokens with random tokens from the base model's tokenizer.
+    Otherwise, uses the mask filling model to fill in the masked spans.
+    '''
     if not args.random_fills:
         masked_texts = [tokenize_and_mask(x, span_length, pct, ceil_pct) for x in texts]
         raw_fills = replace_masks(masked_texts)
@@ -177,6 +214,10 @@ def perturb_texts_(texts, span_length, pct, ceil_pct=False):
 
 
 def perturb_texts(texts, span_length, pct, ceil_pct=False):
+    '''Perturb the texts in chunks to avoid running out of memory.
+    The chunk size is determined by args.chunk_size, but is halved if using a large mask filling model (11B).
+    Applies perturb_texts_ to each chunk and returns the combined results.'''
+
     chunk_size = args.chunk_size
     if '11b' in mask_filling_model_name:
         chunk_size //= 2
@@ -188,10 +229,15 @@ def perturb_texts(texts, span_length, pct, ceil_pct=False):
 
 
 def drop_last_word(text):
+    '''Drop the last word from the text.'''
     return ' '.join(text.split(' ')[:-1])
 
 
 def _openai_sample(p):
+    '''Sample from the OpenAI model given a prompt p.
+    If args.dataset is not 'pubmed', drop the last word from the prompt to avoid incomplete words.
+    If args.do_top_p is True, use top_p sampling with args.top_p.
+    '''
     if args.dataset != 'pubmed':  # keep Answer: prefix for pubmed
         p = drop_last_word(p)
 
