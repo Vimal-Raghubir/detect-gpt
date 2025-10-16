@@ -252,6 +252,12 @@ def _openai_sample(p):
 
 # sample from base_model using ****only**** the first 30 tokens in each example as context
 def sample_from_model(texts, min_words=55, prompt_tokens=30):
+    '''Sample from the base model using the first prompt_tokens tokens in each text as context.
+    If using an OpenAI model, uses the OpenAI API to sample.
+    If not using an OpenAI model, uses the base_model to sample.
+    Ensures that the sampled text has at least min_words words.
+    Returns a list of sampled texts.
+    '''
     # encode each text as a list of token ids
     if args.dataset == 'pubmed':
         texts = [t[:t.index(custom_datasets.SEPARATOR)] for t in texts]
@@ -298,6 +304,11 @@ def sample_from_model(texts, min_words=55, prompt_tokens=30):
 
 
 def get_likelihood(logits, labels):
+    '''Get the average log likelihood of the labels given the logits.
+    logits: (1, seq_len, vocab_size)
+    labels: (1, seq_len)
+    returns: average log likelihood of the labels
+    '''
     assert logits.shape[0] == 1
     assert labels.shape[0] == 1
 
@@ -310,6 +321,10 @@ def get_likelihood(logits, labels):
 
 # Get the log likelihood of each text under the base_model
 def get_ll(text):
+    '''Get the log likelihood of the text under the base_model.
+    If using an OpenAI model, uses the OpenAI API to get the log likelihood.
+    If not using an OpenAI model, uses the base_model to get the log likelihood.
+    '''
     if args.openai_model:        
         kwargs = { "engine": args.openai_model, "temperature": 0, "max_tokens": 0, "echo": True, "logprobs": 0}
         r = openai.Completion.create(prompt=f"<|endoftext|>{text}", **kwargs)
@@ -327,6 +342,10 @@ def get_ll(text):
 
 
 def get_lls(texts):
+    '''Get the log likelihoods of a list of texts under the base_model.
+    If using an OpenAI model, uses the OpenAI API to get the log likelihoods in parallel.
+    If not using an OpenAI model, uses the base_model to get the log likelihoods.
+    '''
     if not args.openai_model:
         return [get_ll(text) for text in texts]
     else:
@@ -342,6 +361,9 @@ def get_lls(texts):
 
 # get the average rank of each observed token sorted by model likelihood
 def get_rank(text, log=False):
+    '''Get the average rank of each observed token in the text, sorted by model likelihood.
+    If log is True, returns the average log rank.
+    '''
     assert args.openai_model is None, "get_rank not implemented for OpenAI models"
 
     with torch.no_grad():
@@ -368,6 +390,8 @@ def get_rank(text, log=False):
 
 # get average entropy of each token in the text
 def get_entropy(text):
+    '''Get the average entropy of each token in the text.
+    '''
     assert args.openai_model is None, "get_entropy not implemented for OpenAI models"
 
     with torch.no_grad():
@@ -378,12 +402,18 @@ def get_entropy(text):
 
 
 def get_roc_metrics(real_preds, sample_preds):
+    '''Get the ROC curve metrics given the predictions for real and sampled texts.
+    0 = real, 1 = sampled
+    '''
     fpr, tpr, _ = roc_curve([0] * len(real_preds) + [1] * len(sample_preds), real_preds + sample_preds)
     roc_auc = auc(fpr, tpr)
     return fpr.tolist(), tpr.tolist(), float(roc_auc)
 
 
 def get_precision_recall_metrics(real_preds, sample_preds):
+    '''Get the precision-recall curve metrics given the predictions for real and sampled texts.
+    0 = real, 1 = sampled
+    '''
     precision, recall, _ = precision_recall_curve([0] * len(real_preds) + [1] * len(sample_preds), real_preds + sample_preds)
     pr_auc = auc(recall, precision)
     return precision.tolist(), recall.tolist(), float(pr_auc)
@@ -391,6 +421,9 @@ def get_precision_recall_metrics(real_preds, sample_preds):
 
 # save the ROC curve for each experiment, given a list of output dictionaries, one for each experiment, using colorblind-friendly colors
 def save_roc_curves(experiments):
+    '''Save the ROC curves for each experiment.
+    Each experiment is expected to be a dictionary with keys 'name' and 'metrics', where 'metrics' is a dictionary with keys 'fpr', 'tpr', and 'roc_auc'.
+    '''
     # first, clear plt
     plt.clf()
 
@@ -411,6 +444,9 @@ def save_roc_curves(experiments):
 
 # save the histogram of log likelihoods in two side-by-side plots, one for real and real perturbed, and one for sampled and sampled perturbed
 def save_ll_histograms(experiments):
+    '''Save the histograms of log likelihoods for each experiment.
+    Each experiment is expected to be a dictionary with keys 'name' and 'raw_results', where 'raw_results' is a list of dictionaries with keys 'original_ll', 'sampled_ll', 'perturbed_original_ll', and 'perturbed_sampled_ll'.
+    '''
     # first, clear plt
     plt.clf()
 
@@ -438,6 +474,9 @@ def save_ll_histograms(experiments):
 
 # save the histograms of log likelihood ratios in two side-by-side plots, one for real and real perturbed, and one for sampled and sampled perturbed
 def save_llr_histograms(experiments):
+    '''Save the histograms of log likelihood ratios for each experiment.
+    Each experiment is expected to be a dictionary with keys 'name' and 'raw_results', where 'raw_results' is a list of dictionaries with keys 'original_ll', 'sampled_ll', 'perturbed_original_ll', and 'perturbed_sampled_ll'.
+    '''
     # first, clear plt
     plt.clf()
 
@@ -464,6 +503,20 @@ def save_llr_histograms(experiments):
 
 
 def get_perturbation_results(span_length=10, n_perturbations=1, n_samples=500):
+    '''Get the perturbation results for the given span_length and number of perturbations.
+    Perturbs each text n_perturbations times, computes the log likelihoods of the original and sampled texts, as well as their perturbed versions.
+    Returns a list of dictionaries, one for each text, with keys:
+    - original: the original text
+    - sampled: the sampled text
+    - perturbed_sampled: a list of the perturbed sampled texts
+    - perturbed_original: a list of the perturbed original texts
+    - original_ll: the log likelihood of the original text
+    - sampled_ll: the log likelihood of the sampled text
+    - perturbed_sampled_ll: the average log likelihood of the perturbed sampled texts
+    - perturbed_original_ll: the average log likelihood of the perturbed original texts
+    - perturbed_sampled_ll_std: the standard deviation of the log likelihoods of the perturbed sampled texts
+    - perturbed_original_ll_std: the standard deviation of the log likelihoods of the perturbed original texts
+    '''
     load_mask_model()
 
     torch.manual_seed(0)
@@ -512,6 +565,17 @@ def get_perturbation_results(span_length=10, n_perturbations=1, n_samples=500):
 
 
 def run_perturbation_experiment(results, criterion, span_length=10, n_perturbations=1, n_samples=500):
+    '''Run the perturbation experiment using the given results and criterion.
+    criterion: 'd' for difference, 'z' for z-score
+    Returns a dictionary with keys:
+    - name: the name of the experiment
+    - predictions: a dictionary with keys 'real' and 'samples', each containing a list of prediction scores
+    - info: a dictionary with keys 'pct_words_masked', 'span_length', 'n_perturbations', and 'n_samples'
+    - raw_results: the raw results from get_perturbation_results
+    - metrics: a dictionary with keys 'roc_auc', 'fpr', and 'tpr'
+    - pr_metrics: a dictionary with keys 'pr_auc', 'precision', and 'recall'
+    - loss: 1 - pr_auc
+    '''
     # compute diffs with perturbed
     predictions = {'real': [], 'samples': []}
     for res in results:
@@ -561,6 +625,18 @@ def run_perturbation_experiment(results, criterion, span_length=10, n_perturbati
 
 
 def run_baseline_threshold_experiment(criterion_fn, name, n_samples=500):
+    '''Run a baseline threshold experiment using the given criterion function.
+    criterion_fn: function that takes a text and returns a score
+    name: name of the experiment
+    Returns a dictionary with keys:
+    - name: the name of the experiment
+    - predictions: a dictionary with keys 'real' and 'samples', each containing a list of prediction scores
+    - info: a dictionary with key 'n_samples'
+    - raw_results: the raw results from the experiment
+    - metrics: a dictionary with keys 'roc_auc', 'fpr', and 'tpr'
+    - pr_metrics: a dictionary with keys 'pr_auc', 'precision', and 'recall'
+    - loss: 1 - pr_auc
+    '''
     torch.manual_seed(0)
     np.random.seed(0)
 
@@ -609,6 +685,8 @@ def run_baseline_threshold_experiment(criterion_fn, name, n_samples=500):
 
 # strip newlines from each example; replace one or more newlines with a single space
 def strip_newlines(text):
+    '''Strip newlines from the text by replacing one or more newlines with a single space.
+    '''
     return ' '.join(text.split())
 
 

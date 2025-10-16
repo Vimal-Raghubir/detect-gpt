@@ -1,7 +1,10 @@
 
-# Explanations of the First 11 Functions in `run.py`
 
-This document provides an in-depth breakdown of the first eleven functions in the `detect-gpt/run.py` file. Each function is explained in terms of its purpose, how it works, and its role in the overall pipeline.
+
+
+# Explanations of the First 26 Functions in `run.py`
+
+This document provides an in-depth breakdown of the first twenty-six functions in the `detect-gpt/run.py` file. Each function is explained in terms of its purpose, how it works, and its role in the overall pipeline.
 
 ---
 
@@ -156,36 +159,237 @@ Used to trim prompts, especially before sending them to a language model for con
 
 ---
 
-## 11. `_openai_sample(p)`
+
+## 12. `sample_from_model(texts, min_words=55, prompt_tokens=30)`
 **Purpose:**  
-Generates a text continuation from the OpenAI API, using the given prompt.
+Generates text samples from the base model (or OpenAI API) using the first `prompt_tokens` tokens of each input as context, ensuring each sample has at least `min_words` words.
 
 **How it works:**
-- Optionally drops the last word from the prompt (unless the dataset is 'pubmed').
-- Sets up parameters for the OpenAI API call, including model engine and sampling options.
-- Calls the API to generate a continuation.
-- Returns the original prompt concatenated with the generated text.
+- For 'pubmed', trims each text at a separator and encodes for the model.
+- For other datasets, encodes the first `prompt_tokens` tokens of each text.
+- If using OpenAI, decodes prefixes and uses a thread pool to sample completions via `_openai_sample`.
+- If using a local model, repeatedly samples until all outputs have at least `min_words` words, using top-p or top-k sampling if specified.
+- Tracks API token usage if using OpenAI.
+- Returns the generated samples.
 
 **Why:**  
-Used to sample text from OpenAI models for evaluation or data augmentation.
+Ensures generated samples are long enough and uses only the beginning of each text as context, which is important for fair evaluation and for controlling the prompt length.
+
+---
+
+## 13. `get_likelihood(logits, labels)`
+**Purpose:**  
+Calculates the average log-likelihood of a sequence of labels (tokens) given the model’s output logits.
+
+**How it works:**
+- Checks that the batch size is 1.
+- Reshapes logits and labels to align them for next-token prediction.
+- Computes log-probabilities using softmax.
+- Gathers the log-probabilities for the true labels.
+- Returns the mean log-likelihood across the sequence.
+
+**Why:**  
+This is a standard metric for evaluating how well a model predicts a sequence, used for scoring text likelihoods in the pipeline.
+
+---
+
+## 14. `get_ll(text)`
+**Purpose:**  
+Computes the log-likelihood of a single text under the base model or OpenAI API.
+
+**How it works:**
+- If using OpenAI, sends the text as a prompt and retrieves log-probabilities for each token, then averages them.
+- If using a local model, tokenizes the text and computes the negative loss (which is the log-likelihood) using the model in evaluation mode.
+- Returns the mean log-likelihood.
+
+**Why:**  
+Provides a way to score texts for their likelihood under the model, which is central to DetectGPT’s analysis and discrimination between real and generated texts.
+
+---
+
+## 15. `get_lls(texts)`
+**Purpose:**  
+Computes the log-likelihoods for a list of texts under the base model or OpenAI API.
+
+**How it works:**
+- If not using OpenAI, calls `get_ll` for each text and returns the list of results.
+- If using OpenAI, tracks API token usage, then uses a thread pool to compute log-likelihoods in parallel for all texts.
+- Returns a list of log-likelihoods.
+
+**Why:**  
+Efficiently scores multiple texts, which is necessary for batch evaluation and analysis in experiments.
+
+---
+
+## 16. `get_rank(text, log=False)`
+**Purpose:**  
+Calculates the average rank of each observed token in the text, sorted by model likelihood.
+
+**How it works:**
+- Only works for local models (not OpenAI).
+- Tokenizes the text and gets model logits.
+- For each token, finds its rank in the model’s predicted likelihood ordering.
+- Optionally applies a logarithm to the ranks.
+- Returns the mean rank (or log-rank) across the sequence.
+
+**Why:**  
+Rank-based metrics help assess how well the model predicts the actual tokens, providing a different perspective than log-likelihood.
+
+---
+
+## 17. `get_entropy(text)`
+**Purpose:**  
+Computes the average entropy of the model’s token predictions for a given text.
+
+**How it works:**
+- Only works for local models.
+- Tokenizes the text and gets model logits.
+- Calculates the entropy for each token’s prediction (using softmax and log-softmax).
+- Returns the mean entropy across the sequence.
+
+**Why:**  
+Entropy measures the uncertainty of the model’s predictions, which can be used to distinguish between real and generated texts.
+
+---
+
+
+## 19. `get_precision_recall_metrics(real_preds, sample_preds)`
+**Purpose:**  
+Calculates precision-recall curve metrics (precision, recall, and AUC) for distinguishing real vs. generated samples.
+
+**How it works:**
+- Combines real and sample predictions, labels them, and computes the precision-recall curve using scikit-learn.
+- Calculates the area under the curve (AUC).
+- Returns precision, recall, and AUC as lists and a float.
+
+**Why:**  
+Precision-recall metrics are useful for evaluating binary classifiers, especially when dealing with imbalanced datasets.
+
+---
+
+## 20. `save_roc_curves(experiments)`
+**Purpose:**  
+Saves ROC curve plots for each experiment, using colorblind-friendly colors.
+
+**How it works:**
+- Clears the current matplotlib plot.
+- Iterates over experiments, plotting each ROC curve with a unique color and label.
+- Adds a diagonal reference line, sets axis limits and labels, and saves the plot to a PNG file.
+
+**Why:**  
+Visualizes the performance of different experiments, making it easy to compare ROC curves and AUCs.
+
+---
+
+## 21. `save_ll_histograms(experiments)`
+**Purpose:**  
+Saves histograms of log likelihoods for real and perturbed texts, and for sampled and perturbed sampled texts.
+
+**How it works:**
+- Clears the current matplotlib plot.
+- For each experiment, plots two side-by-side histograms: one for sampled/perturbed sampled, one for original/perturbed original.
+- Sets labels, legends, and saves the plot to a PNG file.
+
+**Why:**  
+Provides visual insight into how perturbations affect the log likelihood distributions of texts.
+
+---
+
+
+## 23. `get_perturbation_results(span_length=10, n_perturbations=1, n_samples=500)`
+**Purpose:**  
+Runs the perturbation experiment by generating perturbed versions of original and sampled texts, then computes log likelihoods for all.
+
+**How it works:**
+- Loads the mask model and sets random seeds for reproducibility.
+- Uses a partial function to set up the perturbation method.
+- Perturbs both sampled and original texts multiple times.
+- Asserts the correct number of perturbed samples.
+- For each text, stores the original, sampled, and all perturbed versions.
+- Loads the base model and computes log likelihoods for all texts and their perturbations.
+- Stores means and standard deviations of log likelihoods for further analysis.
+
+**Why:**  
+Central to the DetectGPT pipeline, this function prepares all data needed for evaluating the effect of perturbations on model likelihoods.
+
+---
+
+## 24. `run_perturbation_experiment(results, criterion, span_length=10, n_perturbations=1, n_samples=500)`
+**Purpose:**  
+Evaluates the discriminative power of a chosen criterion (e.g., difference or z-score of likelihoods) on the results of a perturbation experiment.
+
+**How it works:**
+- Computes prediction scores for real and sampled texts using the specified criterion.
+- Handles edge cases (e.g., zero standard deviation).
+- Calculates ROC and precision-recall metrics.
+- Prints and returns a dictionary with all relevant metrics and results.
+
+**Why:**  
+Quantifies how well the chosen criterion separates real from generated texts, providing key metrics for DetectGPT evaluation.
+
+---
+
+## 25. `run_baseline_threshold_experiment(criterion_fn, name, n_samples=500)`
+**Purpose:**  
+Runs a baseline experiment using a simple criterion function (e.g., likelihood, rank, entropy) to score texts.
+
+**How it works:**
+- Sets random seeds for reproducibility.
+- For each batch, computes criterion scores for original and sampled texts.
+- Aggregates predictions and computes ROC and precision-recall metrics.
+- Prints and returns a dictionary with all relevant metrics and results.
+
+**Why:**  
+Provides baseline metrics for comparison against the perturbation-based methods, helping to contextualize DetectGPT’s performance.
+
+---
+
+## 26. `strip_newlines(text)`
+**Purpose:**  
+Removes all newlines from a text, replacing them with spaces.
+
+**How it works:**
+- Splits the text by whitespace and rejoins with single spaces.
+
+**Why:**  
+Ensures text is in a clean, single-line format for processing and modeling.
 
 ---
 
 ## Summary Table
 
 | # | Function         | Main Task                                   | Key Actions                                                                 |
-|---|------------------|---------------------------------------------|------------------------------------------------------------------------------|
-| 1 | `load_base_model`    | Move base model to GPU                   | Moves mask model to CPU, base model to GPU, times operation                  |
-| 2 | `load_mask_model`    | Move mask model to GPU                   | Moves base model to CPU, mask model to GPU (unless random fills), times op   |
-| 3 | `tokenize_and_mask`  | Randomly mask spans in text              | Splits text, computes number of spans, masks spans, replaces with `<extra_id_N>`, returns   |
-| 4 | `count_masks`        | Count mask tokens in texts               | Splits text, counts tokens starting with `<extra_id_`                        |
-| 5 | `replace_masks`      | Fill masks using mask model              | Tokenizes, generates fills, decodes output                                   |
-| 6 | `extract_fills`      | Extract generated fills from model outputs| Cleans text, splits by mask tokens, trims whitespace                         |
-| 7 | `apply_extracted_fills` | Insert fills into masked text           | Replaces mask tokens with fills, reconstructs perturbed text                 |
-| 8 | `perturb_texts_`     | Perturb batch of texts                   | Masks, fills, retries if needed, supports random/model fills                 |
-| 9 | `perturb_texts`      | Batch perturbation                       | Splits into chunks, calls `perturb_texts_`, aggregates results               |
-|10 | `drop_last_word`     | Remove last word from text               | Splits, removes last word, rejoins                                          |
-|11 | `_openai_sample`     | Sample from OpenAI API                   | Optionally trims prompt, calls API, concatenates result                      |
+
+
+
+| #  | Function                  | Main Task                                   | Key Actions                                                                 |
+|----|---------------------------|---------------------------------------------|------------------------------------------------------------------------------|
+| 1  | `load_base_model`         | Move base model to GPU                      | Moves mask model to CPU, base model to GPU, times operation                  |
+| 2  | `load_mask_model`         | Move mask model to GPU                      | Moves base model to CPU, mask model to GPU (unless random fills), times op   |
+| 3  | `tokenize_and_mask`       | Randomly mask spans in text                 | Splits text, computes number of spans, masks spans, replaces with `<extra_id_N>`, returns   |
+| 4  | `count_masks`             | Count mask tokens in texts                  | Splits text, counts tokens starting with `<extra_id_`                        |
+| 5  | `replace_masks`           | Fill masks using mask model                 | Tokenizes, generates fills, decodes output                                   |
+| 6  | `extract_fills`           | Extract generated fills from model outputs  | Cleans text, splits by mask tokens, trims whitespace                         |
+| 7  | `apply_extracted_fills`   | Insert fills into masked text               | Replaces mask tokens with fills, reconstructs perturbed text                 |
+| 8  | `perturb_texts_`          | Perturb batch of texts                      | Masks, fills, retries if needed, supports random/model fills                 |
+| 9  | `perturb_texts`           | Batch perturbation                          | Splits into chunks, calls `perturb_texts_`, aggregates results               |
+| 10 | `drop_last_word`          | Remove last word from text                  | Splits, removes last word, rejoins                                          |
+| 11 | `_openai_sample`          | Sample from OpenAI API                      | Optionally trims prompt, calls API, concatenates result                      |
+| 12 | `sample_from_model`       | Sample from model with context              | Uses first tokens as context, ensures min length, supports OpenAI/local      |
+| 13 | `get_likelihood`          | Compute average log-likelihood              | Reshapes logits/labels, computes log-probs, averages                        |
+| 14 | `get_ll`                  | Log-likelihood for single text              | Uses OpenAI or local model, averages log-probs                               |
+| 15 | `get_lls`                 | Log-likelihoods for list of texts           | Batch scoring, supports OpenAI/local, parallelizes if needed                 |
+| 16 | `get_rank`                | Average rank of tokens                      | Finds rank of each token, averages, supports log-rank                        |
+| 17 | `get_entropy`             | Average entropy of token predictions        | Computes entropy for each token, averages                                    |
+| 18 | `get_roc_metrics`         | ROC curve metrics for classification        | Combines predictions, computes ROC curve and AUC                             |
+| 19 | `get_precision_recall_metrics` | Precision-recall metrics for classification | Combines predictions, computes PR curve and AUC                              |
+| 20 | `save_roc_curves`         | Save ROC curve plots                        | Plots ROC curves for experiments, saves PNG                                  |
+| 21 | `save_ll_histograms`      | Save log likelihood histograms              | Plots histograms for log likelihoods, saves PNG                              |
+| 22 | `save_llr_histograms`     | Save log likelihood ratio histograms        | Plots histograms for LLRs, saves PNG                                         |
+| 23 | `get_perturbation_results`| Run perturbation experiment                 | Perturbs texts, computes log likelihoods, aggregates results                 |
+| 24 | `run_perturbation_experiment` | Evaluate criterion on perturbation results | Computes scores, metrics, returns experiment results                         |
+| 25 | `run_baseline_threshold_experiment` | Run baseline experiment                   | Scores texts with criterion, computes metrics, returns results               |
+| 26 | `strip_newlines`          | Remove newlines from text                   | Replaces newlines with spaces, cleans text                                   |
 
 ---
 
