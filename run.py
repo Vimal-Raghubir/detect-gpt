@@ -692,6 +692,8 @@ def strip_newlines(text):
 
 # trim to shorter length
 def trim_to_shorter_length(texta, textb):
+    '''Trim two texts to the shorter length in words.
+    '''
     # truncate to shorter of o and s
     shorter_length = min(len(texta.split(' ')), len(textb.split(' ')))
     texta = ' '.join(texta.split(' ')[:shorter_length])
@@ -700,6 +702,9 @@ def trim_to_shorter_length(texta, textb):
 
 
 def truncate_to_substring(text, substring, idx_occurrence):
+    '''Truncate the text to the idx_occurrence occurrence of substring.
+    If substring does not occur idx_occurrence times, returns the original text.
+    '''
     # truncate everything after the idx_occurrence occurrence of substring
     assert idx_occurrence > 0, 'idx_occurrence must be > 0'
     idx = -1
@@ -711,6 +716,10 @@ def truncate_to_substring(text, substring, idx_occurrence):
 
 
 def generate_samples(raw_data, batch_size):
+    '''Generate samples from the base model for the given raw_data.
+    Returns a dictionary with keys 'original' and 'sampled', each containing a list of texts.
+    Applies pre-perturbations if specified in args.
+    '''
     torch.manual_seed(42)
     np.random.seed(42)
     data = {
@@ -744,6 +753,10 @@ def generate_samples(raw_data, batch_size):
 
 
 def generate_data(dataset, key):
+    '''Generate data for the given dataset and key.
+    Returns a dictionary with keys 'original' and 'sampled', each containing a list of texts.
+    Applies preprocessing to the data to remove duplicates, strip whitespace, and remove newlines.
+    '''
     # load data
     if dataset in custom_datasets.DATASETS:
         data = custom_datasets.load(dataset, cache_dir)
@@ -788,6 +801,10 @@ def generate_data(dataset, key):
 
 
 def load_base_model_and_tokenizer(name):
+    '''Load the base model and tokenizer.
+    Returns the base model and tokenizer.
+    If args.openai_model is not None, returns None for the base model.'''
+
     if args.openai_model is None:
         print(f'Loading BASE model {args.base_model_name}...')
         base_model_kwargs = {}
@@ -812,6 +829,15 @@ def load_base_model_and_tokenizer(name):
 
 
 def eval_supervised(data, model):
+    '''Evaluate a supervised detector model on the given data.
+    Returns a dictionary with keys:
+    - name: the name of the model
+    - predictions: a dictionary with keys 'real' and 'samples', each containing a list of prediction scores
+    - info: a dictionary with key 'n_samples'
+    - metrics: a dictionary with keys 'roc_auc', 'fpr', and 'tpr'
+    - pr_metrics: a dictionary with keys 'pr_auc', 'precision', and 'recall'
+    - loss: 1 - pr_auc
+    '''
     print(f'Beginning supervised evaluation with {model}...')
     detector = transformers.AutoModelForSequenceClassification.from_pretrained(model, cache_dir=cache_dir).to(DEVICE)
     tokenizer = transformers.AutoTokenizer.from_pretrained(model, cache_dir=cache_dir)

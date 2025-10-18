@@ -354,6 +354,125 @@ Removes all newlines from a text, replacing them with spaces.
 **Why:**  
 Ensures text is in a clean, single-line format for processing and modeling.
 
+
+## 27. `trim_to_shorter_length(texta, textb)`
+**Purpose:**  
+Trims two input texts so that both are shortened to the same (shorter) length, measured in words.
+
+**How it works:**
+- Splits both `texta` and `textb` into lists of words (using spaces as delimiters).
+- Determines the length of the shorter text (in words).
+- Truncates both texts to this shorter length by slicing the word lists.
+- Joins the truncated word lists back into strings and returns them.
+
+**Why:**  
+Ensures that two texts are directly comparable by length, which is important for fair evaluation or paired operations (e.g., when comparing original and generated samples).
+
+---
+
+## 28. `truncate_to_substring(text, substring, idx_occurrence)`
+**Purpose:**  
+Truncates the input `text` at the position of the `idx_occurrence`-th appearance of a given `substring`. If the substring does not occur enough times, returns the original text.
+
+**How it works:**
+- Asserts that `idx_occurrence` is greater than 0.
+- Iterates through the text, searching for the next occurrence of `substring` each time, updating the index.
+- After finding the `idx_occurrence`-th occurrence, slices the text up to that index (not including the substring itself).
+- If the substring does not occur enough times, returns the original text.
+
+**Why:**  
+Useful for extracting a prefix of a text up to a certain repeated marker or delimiter, which can be important for prompt construction or data cleaning.
+
+---
+
+## 29. `generate_samples(raw_data, batch_size)`
+**Purpose:**  
+Generates a set of samples from the base model for a given set of raw input texts, batching the process for efficiency and optionally applying pre-perturbations.
+
+**How it works:**
+- Sets random seeds for reproducibility (PyTorch and NumPy).
+- Initializes a dictionary with keys `original` and `sampled` to store the input and generated texts.
+- Iterates over the raw data in batches of size `batch_size`.
+- For each batch:
+	- Appends the original texts to the `original` list.
+	- Uses the model to generate samples for each input and appends them to the `sampled` list.
+- If pre-perturbation is enabled (via `args.pre_perturb_pct`), applies a perturbation function to the sampled texts before storing them.
+- Returns the dictionary containing both the original and sampled texts.
+
+**Why:**  
+Provides a standardized way to generate and store both original and model-generated samples, supporting downstream experiments and analyses.
+
+---
+
+## 30. `generate_data(dataset, key)`
+**Purpose:**  
+Loads, cleans, filters, and prepares a dataset for use in experiments, returning a dictionary of original and sampled texts.
+
+**How it works:**
+- Loads the data from a custom dataset or a default source, depending on the dataset name.
+- Removes duplicate entries deterministically (preserving order).
+- Strips whitespace and removes newlines from each example.
+- For certain datasets, keeps only examples with more than 250 words.
+- Shuffles the data with a fixed seed for reproducibility.
+- Truncates the dataset to the first 5,000 examples for efficiency.
+- Tokenizes the data and keeps only examples with 512 tokens or fewer (to ensure compatibility with the mask model and to filter out low-quality content).
+- Prints statistics about the remaining data (number of samples, average length).
+- Calls `generate_samples` to produce the final dictionary of original and sampled texts, using the specified batch size and sample count.
+
+**Why:**  
+Ensures that the data used for experiments is clean, deduplicated, appropriately sized, and ready for model processing, which is critical for reliable and reproducible results.
+
+
+## 31. `load_base_model_and_tokenizer(name)`
+**Purpose:**  
+Loads the base language model and its tokenizer from a given model name, handling both local and OpenAI models, and returns them for use in downstream tasks.
+
+**How it works:**
+- Checks if an OpenAI model is being used. If so, returns `None` for the base model (since inference will be via API).
+- If using a local model:
+	- Loads the model and tokenizer from the HuggingFace Transformers library, using the provided `name` and any optional arguments (e.g., cache directory, dataset-specific options).
+	- Sets the tokenizer's padding token to the end-of-sequence token for consistency.
+- Returns the loaded model and tokenizer.
+
+**Why:**  
+Provides a unified interface for loading models and tokenizers, abstracting away the differences between local and API-based models, and ensuring correct configuration for downstream use.
+
+---
+
+## 32. `eval_supervised(data, model)`
+**Purpose:**  
+Evaluates a supervised classification model (e.g., a fine-tuned transformer) on a dataset, computing standard metrics for real and generated samples.
+
+**How it works:**
+- Prints a message indicating the start of evaluation.
+- Loads the sequence classification model and tokenizer from HuggingFace, moving the model to the GPU.
+- Prepares the real and fake (sampled) data for evaluation.
+- Runs the model in evaluation mode (no gradients) to get predictions for both real and fake samples.
+- Computes ROC and precision-recall metrics using the predictions.
+- Prints the resulting AUC scores.
+- Frees GPU memory by deleting the model and clearing the cache.
+- Returns a dictionary with the model name, predictions, info, metrics, and loss.
+
+**Why:**  
+Allows for quantitative comparison of supervised detectors against unsupervised or perturbation-based methods, providing a baseline or upper bound for detection performance.
+
+---
+
+## 33. Main Method (`if __name__ == '__main__':`)
+**Purpose:**  
+Serves as the entry point for the script, handling argument parsing, environment setup, and orchestration of the main experimental pipeline.
+
+**How it works:**
+- Sets the computation device (e.g., CUDA for GPU).
+- Defines and parses a comprehensive set of command-line arguments, covering dataset selection, model configuration, perturbation parameters, sampling options, and more.
+- Handles OpenAI API key setup if needed.
+- Records the start date and time for experiment tracking.
+- Defines the output folder for saving results, using a timestamp and model names for uniqueness.
+- (The rest of the main method, not shown in the snippet, would typically include: loading data, running experiments, saving results, and possibly plotting or logging outputs.)
+
+**Why:**  
+Centralizes configuration and execution logic, making the script flexible, reproducible, and easy to run with different settings from the command line.
+
 ---
 
 ## Summary Table
