@@ -513,3 +513,80 @@ Centralizes configuration and execution logic, making the script flexible, repro
 ---
 
 These functions are essential for the span-masking and filling process used in DetectGPT-style perturbations, and are tailored for models like T5 that use `<extra_id_N>` tokens for span masking. They automate the process of masking, filling, and reconstructing perturbed texts for downstream analysis.
+
+---
+
+## ✅ Three layers of text: Human, AI, and Perturbed
+
+Exactly right — you’ve nailed the conceptual structure.
+Let’s make it **100 % clear and visualize the three layers of text** your code works with 👇
+
+---
+
+### 🧱 1️⃣ **Human-written text**
+
+* Comes from the **XSum dataset** (`EdinburghNLP/xsum`) — short BBC-style summaries written by people.
+* This is your **“real”** text:
+
+	```text
+	Original (human): "The prime minister announced new funding for green energy projects..."
+	```
+
+---
+
+### 🤖 2️⃣ **AI-generated paraphrase**
+
+* For each human text, the script uses your **base model (`gpt2-medium`)** to generate a continuation or paraphrase.
+* That becomes the **AI-generated (fake)** version:
+
+	```text
+	Sampled (AI): "New energy initiatives were revealed by the prime minister to encourage sustainable investment..."
+	```
+
+At this point, the dataset contains **pairs**:
+
+| Human text | AI-generated text |
+| ---------- | ----------------- |
+| `original` | `sampled`         |
+
+---
+
+### 🔄 3️⃣ **Perturbed versions of each**
+
+* Now the DetectGPT logic comes in:
+	For both the **human** and **AI-generated** texts, small random edits (perturbations) are applied using **T5 (`t5-large`)**.
+
+* These are subtle rewrites like:
+
+	```text
+	Perturbed human: "The PM revealed new money for eco-energy schemes..."  
+	Perturbed AI:    "The prime minister outlined plans for green-energy investments..."
+	```
+
+* The goal: test how the **base model’s confidence (log-likelihood)** changes between
+
+	* the original text, and
+	* these perturbed versions.
+
+---
+
+### 🎯 What the script measures
+
+| Step | Text type                      | Purpose                                                          |
+| ---- | ------------------------------ | ---------------------------------------------------------------- |
+| 1    | Human (real)                   | Baseline reference                                               |
+| 2    | AI-generated (GPT-2)           | Fake comparison                                                  |
+| 3    | Perturbed human + perturbed AI | Measure stability of model likelihood — the **DetectGPT signal** |
+
+---
+
+### 💡 Insight
+
+* **Human text:** not optimized for GPT-2 → small change = small drop in likelihood.
+* **AI text:** sits near GPT-2’s probability peak → small change = big drop in likelihood.
+
+That difference in “likelihood drop” is what DetectGPT uses to tell them apart.
+
+---
+
+Would you like me to show a short visual diagram (flow chart style) of this 3-tier process for your dissertation figures?

@@ -57,7 +57,7 @@ python run.py
 To customize, add arguments (see `run.py` for all options):
 
 ```powershell
-python run.py --dataset xsum --n_samples 100 --base_model_name gpt2-medium --mask_filling_model_name t5-large
+python run.py --dataset "EdinburghNLP/xsum" --dataset_key document --base_model_name gpt2-medium --mask_filling_model_name t5-large --cache_dir "C:\Users\PC\.cache\huggingface\hub" --n_samples 20 --batch_size 10
 ```
 
 ## 5. Key Configuration Options
