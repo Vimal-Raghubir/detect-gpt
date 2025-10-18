@@ -165,6 +165,9 @@ def perturb_texts_(texts, span_length, pct, ceil_pct=False):
     Otherwise, uses the mask filling model to fill in the masked spans.
     '''
     if not args.random_fills:
+        # Randomly masks small spans of each text (e.g., 2–3 words).
+        # Uses the T5 model (t5-large) to fill those masks, producing a slightly modified version of the original text.
+        # These are your perturbed texts — small rewrites that sound natural.
         masked_texts = [tokenize_and_mask(x, span_length, pct, ceil_pct) for x in texts]
         raw_fills = replace_masks(masked_texts)
         extracted_fills = extract_fills(raw_fills)
@@ -501,7 +504,7 @@ def save_llr_histograms(experiments):
         except:
             pass
 
-
+# TODO: DetectGPT Logic
 def get_perturbation_results(span_length=10, n_perturbations=1, n_samples=500):
     '''Get the perturbation results for the given span_length and number of perturbations.
     Perturbs each text n_perturbations times, computes the log likelihoods of the original and sampled texts, as well as their perturbed versions.
@@ -522,6 +525,7 @@ def get_perturbation_results(span_length=10, n_perturbations=1, n_samples=500):
     torch.manual_seed(0)
     np.random.seed(0)
 
+    # START Performs perturbations
     results = []
     original_text = data["original"]
     sampled_text = data["sampled"]
@@ -530,6 +534,7 @@ def get_perturbation_results(span_length=10, n_perturbations=1, n_samples=500):
 
     p_sampled_text = perturb_fn([x for x in sampled_text for _ in range(n_perturbations)])
     p_original_text = perturb_fn([x for x in original_text for _ in range(n_perturbations)])
+    # END Performs perturbations
     for _ in range(n_perturbation_rounds - 1):
         try:
             p_sampled_text, p_original_text = perturb_fn(p_sampled_text), perturb_fn(p_original_text)
@@ -548,7 +553,7 @@ def get_perturbation_results(span_length=10, n_perturbations=1, n_samples=500):
         })
 
     load_base_model()
-
+    # Computes perturbation and original log likelihoods
     for res in tqdm.tqdm(results, desc="Computing log likelihoods"):
         p_sampled_ll = get_lls(res["perturbed_sampled"])
         p_original_ll = get_lls(res["perturbed_original"])
@@ -560,10 +565,10 @@ def get_perturbation_results(span_length=10, n_perturbations=1, n_samples=500):
         res["perturbed_original_ll"] = np.mean(p_original_ll)
         res["perturbed_sampled_ll_std"] = np.std(p_sampled_ll) if len(p_sampled_ll) > 1 else 1
         res["perturbed_original_ll_std"] = np.std(p_original_ll) if len(p_original_ll) > 1 else 1
-
+    # Computes perturbation and original log likelihoods
     return results
 
-
+# TODO: DetectGPT Logic
 def run_perturbation_experiment(results, criterion, span_length=10, n_perturbations=1, n_samples=500):
     '''Run the perturbation experiment using the given results and criterion.
     criterion: 'd' for difference, 'z' for z-score
@@ -579,6 +584,12 @@ def run_perturbation_experiment(results, criterion, span_length=10, n_perturbati
     # compute diffs with perturbed
     predictions = {'real': [], 'samples': []}
     for res in results:
+        # This is the DetectGPT metric.
+        # For each text, it computes the drop in log-likelihood after perturbation:
+        # ΔLL = original_LL − perturbed_LL
+        # Optionally normalizes it by the standard deviation (z version).
+        # A larger ΔLL means the model’s confidence dropped sharply → more likely to be AI-generated.
+
         if criterion == 'd':
             predictions['real'].append(res['original_ll'] - res['perturbed_original_ll'])
             predictions['samples'].append(res['sampled_ll'] - res['perturbed_sampled_ll'])
@@ -596,6 +607,8 @@ def run_perturbation_experiment(results, criterion, span_length=10, n_perturbati
             predictions['real'].append((res['original_ll'] - res['perturbed_original_ll']) / res['perturbed_original_ll_std'])
             predictions['samples'].append((res['sampled_ll'] - res['perturbed_sampled_ll']) / res['perturbed_sampled_ll_std'])
 
+    # Compares the DetectGPT scores for human vs AI texts.
+    # If AI texts consistently have higher ΔLL, the ROC AUC will be high (≈0.85–0.9).
     fpr, tpr, roc_auc = get_roc_metrics(predictions['real'], predictions['samples'])
     p, r, pr_auc = get_precision_recall_metrics(predictions['real'], predictions['samples'])
     name = f'perturbation_{n_perturbations}_{criterion}'
@@ -929,6 +942,30 @@ if __name__ == '__main__':
     parser.add_argument('--random_fills_tokens', action='store_true')
     parser.add_argument('--cache_dir', type=str, default="~/.cache")
     args = parser.parse_args()
+
+    # ---------------------------------------------------------------------------
+    # ✅ FORCE CONSISTENT HUGGINGFACE CACHE PATH (prevents missing blob errors)
+    # ---------------------------------------------------------------------------
+
+    # define one absolute, writable cache folder for all models
+    HARDCODED_CACHE = r"C:\Users\PC\.cache\huggingface\hub"
+
+    # normalize and ensure folder exists
+    cache_dir = os.path.abspath(os.path.expanduser(HARDCODED_CACHE))
+    os.makedirs(cache_dir, exist_ok=True)
+
+    # override all Hugging Face cache environment variables
+    os.environ["HF_HOME"] = cache_dir
+    os.environ["HUGGINGFACE_HUB_CACHE"] = cache_dir
+    os.environ["TRANSFORMERS_CACHE"] = cache_dir
+
+    # optional: remove XDG_CACHE_HOME to avoid Linux-style defaults
+    os.environ.pop("XDG_CACHE_HOME", None)
+
+    # update argparse reference so any downstream code uses the same dir
+    args.cache_dir = cache_dir
+    print(f"[INFO] Using unified HF cache: {cache_dir}")
+    # ---------------------------------------------------------------------------
 
     API_TOKEN_COUNTER = 0
 
