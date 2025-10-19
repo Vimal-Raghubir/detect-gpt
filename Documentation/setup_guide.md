@@ -56,8 +56,14 @@ python run.py
 
 To customize, add arguments (see `run.py` for all options):
 
+For initial run:
 ```powershell
-python run.py --dataset "EdinburghNLP/xsum" --dataset_key document --base_model_name gpt2-medium --mask_filling_model_name t5-large --cache_dir "C:\Users\PC\.cache\huggingface\hub" --n_samples 20 --batch_size 10
+python detectGPT.py --dataset "EdinburghNLP/xsum" --dataset_key document --base_model_name gpt2-medium --mask_filling_model_name t5-large --n_samples 2000 --batch_size 10 --perturb_cache_out "Dataset/Perturbed"
+```
+
+USE THIS FOR EVERY RUN:
+```powershell
+python detectGPT.py --dataset "EdinburghNLP/xsum" --dataset_key document --base_model_name gpt2-medium --mask_filling_model_name t5-large --n_samples 2000 --batch_size 10 --data_json "Dataset/AI/AI_EdinburghNLP_xsum.json" --perturb_cache_out "Dataset/Perturbed"
 ```
 
 ## 5. Key Configuration Options
